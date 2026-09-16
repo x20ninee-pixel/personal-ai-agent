@@ -37,6 +37,7 @@ from planner import (
     build_smart_plan,
     build_reschedule_message,
 )
+from reports import get_daily_report, get_weekly_report
 
 from agent import ask_agent
 
@@ -110,7 +111,8 @@ async def start(update, context):
         "📅 Smart Planner\n"
         "🔄 Adaptive Rescheduling\n"
         "🔴 Overdue Recovery\n"
-        "🔔 Reminders\n\n"
+        "� Reports\n"
+        "�🔔 Reminders\n\n"
 
         "Endi tabiiy tilda yozing -- masalan:\n"
         "\"Ertaga 10:00 da 2 soat ACCA o'qishim kerak\"\n"
@@ -121,6 +123,8 @@ async def start(update, context):
         "/today\n"
         "/plan\n"
         "/tasks\n"
+        "/daily\n"
+        "/weekly\n"
         "/overdue\n"
         "/goals\n"
         "/help"
@@ -128,8 +132,63 @@ async def start(update, context):
 
 
 # =========================================================
-# HELP
+# REPORTS
 # =========================================================
+
+async def daily_report_command(update, context):
+    user_id = str(update.effective_user.id)
+    result = get_daily_report(user_id)
+    if not result.get("ok"):
+        await update.message.reply_text(f"⚠️ {result.get('error', 'Daily report failed')}")
+        return
+
+    summary = result["summary"]
+    text = (
+        "📊 DAILY REPORT\n\n"
+        f"Tasks\n"
+        f"✅ Completed: {summary.get('completed', 0)}\n"
+        f"🟡 Partial: {summary.get('partial', 0)}\n"
+        f"⏭ Skipped: {summary.get('skipped', 0)}\n"
+        f"❌ Missed: {summary.get('missed', 0)}\n\n"
+    )
+    if result.get("goal_progress"):
+        text += "Goals\n"
+        for goal in result["goal_progress"][:3]:
+            text += f"🎯 {goal['name']}: {goal['progress']}%\n"
+        text += "\n"
+    if result.get("habit_progress"):
+        text += "Habits\n"
+        for habit in result["habit_progress"][:3]:
+            text += f"✅ {habit['habit']}: {habit['current']} / {habit['target']} {habit.get('unit', '')}\n"
+        text += "\n"
+    await update.message.reply_text(text.strip())
+
+
+async def weekly_report_command(update, context):
+    user_id = str(update.effective_user.id)
+    result = get_weekly_report(user_id)
+    if not result.get("ok"):
+        await update.message.reply_text(f"⚠️ {result.get('error', 'Weekly report failed')}")
+        return
+
+    summary = result["summary"]
+    text = (
+        "📈 WEEKLY REPORT\n\n"
+        f"Tasks\n"
+        f"✅ Completed: {summary.get('completed', 0)}\n"
+        f"🟡 Partial: {summary.get('partial', 0)}\n"
+        f"⏭ Skipped: {summary.get('skipped', 0)}\n"
+        f"❌ Missed: {summary.get('missed', 0)}\n"
+        f"🔄 Rescheduled: {summary.get('rescheduled', 0)}\n\n"
+    )
+    if result.get("bottlenecks"):
+        text += "Bottlenecks\n"
+        for item in result["bottlenecks"][:2]:
+            text += f"⚠️ {item['note']}\n"
+    else:
+        text += "⚠️ No clear bottlenecks yet.\n"
+    await update.message.reply_text(text.strip())
+
 
 async def help_command(update, context):
 
@@ -163,7 +222,11 @@ async def help_command(update, context):
         "/memory\n"
         "Eslab qol: ...\n\n"
 
-        "📋 TASK YARATISH\n"
+        "� REPORTS\n"
+        "/daily\n"
+        "/weekly\n\n"
+
+        "�📋 TASK YARATISH\n"
         "task: Excel Lesson 14\n"
         "task: Excel Lesson 14 | 2026-09-15 16:00"
     )
@@ -1309,6 +1372,10 @@ async def post_init(
     application
 ):
 
+    if application.bot_data.get("_reminder_worker_started"):
+        return
+
+    application.bot_data["_reminder_worker_started"] = True
     asyncio.create_task(
         reminder_engine(
             application
@@ -1373,6 +1440,18 @@ def main():
         CommandHandler(
             "help",
             help_command
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "daily",
+            daily_report_command
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "weekly",
+            weekly_report_command
         )
     )
 

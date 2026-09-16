@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from database import get_db
+from reminders import invalidate_task_reminders
 from timezone_service import now_for_user, parse_user_datetime
 
 
@@ -272,6 +273,9 @@ def update_task_status(
             f"Invalid task status: {status}"
         )
 
+    if status in {"COMPLETED", "CANCELLED", "MISSED", "SKIPPED", "POSTPONED"}:
+        invalidate_task_reminders(task_id)
+
     db = get_db()
 
     db.execute(
@@ -425,6 +429,8 @@ def update_task_schedule(
     scheduled_end,
 ):
 
+    invalidate_task_reminders(task_id)
+
     db = get_db()
 
     db.execute(
@@ -468,6 +474,8 @@ def clear_task_schedule(
     task_id,
 ):
 
+    invalidate_task_reminders(task_id)
+
     db = get_db()
 
     db.execute(
@@ -503,7 +511,18 @@ def delete_task(
     task_id,
 ):
 
+    invalidate_task_reminders(task_id)
+
     db = get_db()
+
+    db.execute(
+        """
+        DELETE FROM reminders
+
+        WHERE task_id = ?
+        """,
+        (task_id,),
+    )
 
     db.execute(
         """

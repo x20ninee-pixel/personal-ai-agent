@@ -58,6 +58,13 @@ from goals import (
     update_goal_status as _update_goal_status,
     format_goal,
 )
+from reports import (
+    get_daily_report as _get_daily_report,
+    get_weekly_report as _get_weekly_report,
+    get_goal_progress as _get_goal_progress,
+    get_performance_analysis as _get_performance_analysis,
+    get_bottlenecks as _get_bottlenecks,
+)
 from users import update_user_profile as _update_user_profile
 from logger import get_logger
 
@@ -476,6 +483,43 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "get_daily_report",
+        "description": "Return the user's daily summary for a given date using actual persisted task, goal, and habit data.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"date": {"type": "string", "description": "YYYY-MM-DD"}},
+        },
+    },
+    {
+        "name": "get_weekly_report",
+        "description": "Return a 7-day weekly overview with summary, bottlenecks, and performance windows derived from stored data.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"start_date": {"type": "string", "description": "YYYY-MM-DD"}},
+        },
+    },
+    {
+        "name": "get_goal_progress",
+        "description": "Return progress for the user's active goals from real stored metrics.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_performance_analysis",
+        "description": "Analyze task completion by time window with evidence-backed rates and insufficient-data handling.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"days": {"type": "integer"}},
+        },
+    },
+    {
+        "name": "get_bottlenecks",
+        "description": "Surface recurring missed/rescheduled categories from actual task history.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"days": {"type": "integer"}},
+        },
+    },
 ]
 
 
@@ -814,6 +858,54 @@ def _h_update_user_profile(user_id, i):
     return {"ok": True}
 
 
+def _h_get_daily_report(user_id, i):
+    try:
+        return _get_daily_report(user_id, i.get("date"))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        log.error("Daily report failed for user=%s", user_id, exc_info=True)
+        return {"ok": False, "error": "Daily report failed"}
+
+
+def _h_get_weekly_report(user_id, i):
+    try:
+        return _get_weekly_report(user_id, i.get("start_date"))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        log.error("Weekly report failed for user=%s", user_id, exc_info=True)
+        return {"ok": False, "error": "Weekly report failed"}
+
+
+def _h_get_goal_progress(user_id, i):
+    try:
+        return _get_goal_progress(user_id)
+    except Exception as exc:
+        log.error("Goal progress failed for user=%s", user_id, exc_info=True)
+        return {"ok": False, "error": "Goal progress failed"}
+
+
+def _h_get_performance_analysis(user_id, i):
+    try:
+        return _get_performance_analysis(user_id, i.get("days", 7))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        log.error("Performance analysis failed for user=%s", user_id, exc_info=True)
+        return {"ok": False, "error": "Performance analysis failed"}
+
+
+def _h_get_bottlenecks(user_id, i):
+    try:
+        return _get_bottlenecks(user_id, i.get("days", 7))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:
+        log.error("Bottleneck analysis failed for user=%s", user_id, exc_info=True)
+        return {"ok": False, "error": "Bottleneck analysis failed"}
+
+
 _HANDLERS = {
     "create_task": _h_create_task,
     "update_task": _h_update_task,
@@ -843,4 +935,9 @@ _HANDLERS = {
     "update_goal_progress": _h_update_goal_progress,
     "update_goal_status": _h_update_goal_status,
     "update_user_profile": _h_update_user_profile,
+    "get_daily_report": _h_get_daily_report,
+    "get_weekly_report": _h_get_weekly_report,
+    "get_goal_progress": _h_get_goal_progress,
+    "get_performance_analysis": _h_get_performance_analysis,
+    "get_bottlenecks": _h_get_bottlenecks,
 }
