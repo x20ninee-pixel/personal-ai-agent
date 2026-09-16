@@ -99,6 +99,7 @@ async def start(update, context):
     get_or_create_user(
         user_id,
         name=update.effective_user.first_name,
+        telegram_chat_id=update.effective_user.id,
     )
 
     await update.message.reply_text(
@@ -1208,6 +1209,7 @@ async def message_handler(
     get_or_create_user(
         user_id,
         name=update.effective_user.first_name,
+        telegram_chat_id=update.effective_user.id,
     )
 
     text = (

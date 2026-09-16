@@ -1,12 +1,17 @@
+import sqlite3
+
 from database import get_db
 
 from zoneinfo import ZoneInfo
 
 
-def get_or_create_user(user_id, name=None):
+def get_or_create_user(user_id, name=None, telegram_chat_id=None):
     """
     Fetch the user's profile row, creating a default one on
     first contact (e.g. on /start or the first message ever).
+
+    Internal domain user_id and Telegram chat_id are separate
+    concepts and must be stored independently.
     """
 
     db = get_db()
@@ -17,15 +22,25 @@ def get_or_create_user(user_id, name=None):
     ).fetchone()
 
     if row:
+        if telegram_chat_id is not None and row["telegram_chat_id"] != telegram_chat_id:
+            db.execute(
+                "UPDATE users SET telegram_chat_id = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                (telegram_chat_id, user_id),
+            )
+            db.commit()
+            row = db.execute(
+                "SELECT * FROM users WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
         db.close()
         return row
 
     db.execute(
         """
-        INSERT INTO users (user_id, name)
-        VALUES (?, ?)
+        INSERT INTO users (user_id, name, telegram_chat_id)
+        VALUES (?, ?, ?)
         """,
-        (user_id, name),
+        (user_id, name, telegram_chat_id),
     )
 
     db.commit()
@@ -38,6 +53,28 @@ def get_or_create_user(user_id, name=None):
     db.close()
 
     return row
+
+
+def get_user_telegram_chat_id(user_id):
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT telegram_chat_id FROM users WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        db.close()
+        return None
+    db.close()
+    if row is None:
+        return None
+    value = row["telegram_chat_id"]
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def get_user_timezone(user_id):
@@ -77,6 +114,7 @@ def update_user_profile(
     name=None,
     timezone=None,
     default_reminder_minutes=None,
+    telegram_chat_id=None,
 ):
     fields = []
     values = []
@@ -92,6 +130,10 @@ def update_user_profile(
     if default_reminder_minutes is not None:
         fields.append("default_reminder_minutes = ?")
         values.append(default_reminder_minutes)
+
+    if telegram_chat_id is not None:
+        fields.append("telegram_chat_id = ?")
+        values.append(int(telegram_chat_id))
 
     if not fields:
         return

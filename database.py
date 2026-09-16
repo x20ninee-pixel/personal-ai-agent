@@ -2,7 +2,7 @@ import sqlite3
 
 from config import DATABASE_PATH
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 MIGRATIONS = {}
@@ -273,9 +273,15 @@ def _migrate_v2(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_reminders_task_id ON reminders(task_id)")
 
 
+def _migrate_v3(db):
+    add_column_if_missing(db, "users", "telegram_chat_id", "INTEGER")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_users_telegram_chat_id ON users(telegram_chat_id)")
+
+
 MIGRATIONS = {
     1: _migrate_v1,
     2: _migrate_v2,
+    3: _migrate_v3,
 }
 
 

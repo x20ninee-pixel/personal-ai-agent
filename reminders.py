@@ -5,6 +5,7 @@ from config import TZ
 from database import get_db
 from logger import get_logger
 from timezone_service import now_for_user, parse_user_datetime
+from users import get_user_telegram_chat_id
 
 
 log = get_logger(__name__)
@@ -130,16 +131,19 @@ async def check_standalone_reminders(application, now=None):
     for reminder in rows:
         try:
             user_id = str(reminder["user_id"])
+            chat_id = get_user_telegram_chat_id(user_id)
+            if chat_id is None:
+                continue
             reminder_time = parse_datetime(reminder["remind_at"], user_id=user_id)
             if reminder_time is None:
                 continue
-            now_for_row = now or now_for_user(user_id)
+            now_for_row = parse_datetime(now, user_id=user_id) if now is not None else now_for_user(user_id)
             if reminder_time > now_for_row:
                 continue
 
             text = reminder["message"] or "🔔 Eslatma"
             await application.bot.send_message(
-                chat_id=int(user_id),
+                chat_id=chat_id,
                 text=f"🔔 ESLATMA\n\n{text}",
             )
 
@@ -175,9 +179,12 @@ async def process_task_reminders(application, now=None):
     for task in tasks:
         task_id = task["id"]
         user_id = str(task["user_id"])
+        chat_id = get_user_telegram_chat_id(user_id)
         title = task["title"]
         try:
-            task_now = now or now_for_user(user_id)
+            if chat_id is None:
+                continue
+            task_now = parse_datetime(now, user_id=user_id) if now is not None else now_for_user(user_id)
             start = parse_datetime(task["scheduled_start"], user_id=user_id)
             end = parse_datetime(task["scheduled_end"], user_id=user_id)
             if not start or not end:
@@ -187,7 +194,7 @@ async def process_task_reminders(application, now=None):
 
             if 0 < seconds_until_start <= 600 and not notification_sent(task_id, "10_MINUTES"):
                 await application.bot.send_message(
-                    chat_id=int(user_id),
+                    chat_id=chat_id,
                     text=(
                         "🔔 10 DAQIQA QOLDI\n\n"
                         f"📌 {title}\n"
@@ -200,7 +207,7 @@ async def process_task_reminders(application, now=None):
 
             if -60 <= seconds_until_start <= 0 and not notification_sent(task_id, "START"):
                 await application.bot.send_message(
-                    chat_id=int(user_id),
+                    chat_id=chat_id,
                     text=(
                         "🔥 START NOW\n\n"
                         f"📌 {title}\n"
@@ -227,7 +234,7 @@ async def process_task_reminders(application, now=None):
                     db2.close()
                     if not notification_sent(task_id, "MISSED"):
                         await application.bot.send_message(
-                            chat_id=int(user_id),
+                            chat_id=chat_id,
                             text=(
                                 "🔴 TASK MISSED\n\n"
                                 f"📌 {title}\n"
