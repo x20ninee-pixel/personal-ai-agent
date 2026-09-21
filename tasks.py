@@ -503,6 +503,34 @@ def clear_task_schedule(
 
 
 # =========================================================
+# RESCHEDULE / RECOVERY ACTION
+# =========================================================
+
+RESCHEDULE_OPTIONS = {
+    "today": ("PLANNED", "today"),
+    "tomorrow": ("POSTPONED", "tomorrow"),
+    "short": ("PARTIAL", "short"),
+    "cancel": ("CANCELLED", "cancel"),
+}
+
+
+def apply_reschedule_option(user_id, task_id, option):
+    """Apply one recovery/reschedule option to an owned task."""
+
+    if option not in RESCHEDULE_OPTIONS:
+        raise ValueError(f"Invalid reschedule option: {option}")
+
+    task = get_task(user_id, task_id)
+    if task is None:
+        raise KeyError(f"Task {task_id} not found")
+
+    status, _ = RESCHEDULE_OPTIONS[option]
+    clear_task_schedule(user_id, task_id)
+    update_task_status(user_id, task_id, status)
+    return get_task(user_id, task_id)
+
+
+# =========================================================
 # DELETE TASK
 # =========================================================
 

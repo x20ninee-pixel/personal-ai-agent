@@ -3,6 +3,7 @@ import asyncio
 from telegram import Update
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     ContextTypes,
@@ -30,9 +31,11 @@ from tasks import (
     update_recovery_deadline,
     clear_task_schedule,
     delete_task,
+    apply_reschedule_option,
 )
 
 from planner import (
+    get_today_tasks,
     build_today_message,
     build_smart_plan,
     build_reschedule_message,
@@ -51,6 +54,7 @@ from goals import (
 )
 
 from users import get_or_create_user
+from keyboards import build_task_keyboard, build_reschedule_keyboard, parse_callback_data
 
 
 log = get_logger(__name__)
@@ -237,58 +241,43 @@ async def help_command(update, context):
 # TASKS
 # =========================================================
 
+async def _send_task_action_cards(message, tasks):
+    """Send inline action cards for active tasks."""
+    for task in tasks:
+        if task["status"] in {"COMPLETED", "CANCELLED", "SKIPPED"}:
+            continue
+        await message.reply_text(
+            f"📋 #{task['id']} — {task['title']}\nStatus: {task['status']}",
+            reply_markup=build_task_keyboard(task["id"]),
+        )
+
+
 async def tasks_command(update, context):
 
-    user_id = str(
-        update.effective_user.id
-    )
-
+    user_id = str(update.effective_user.id)
     tasks = get_tasks(user_id)
 
     if not tasks:
-
-        await update.message.reply_text(
-            "📋 Hozircha task yo'q."
-        )
-
+        await update.message.reply_text("📋 Hozircha task yo'q.")
         return
 
     message = "📋 TASKLAR\n\n"
-
     for task in tasks:
-
         message += (
             f"#{task['id']} — {task['title']}\n"
             f"Status: {task['status']}\n"
             f"Priority: {task['priority']}\n"
         )
-
         if task["due_date"]:
-
-            message += (
-                f"⏰ Original deadline: "
-                f"{task['due_date']}\n"
-            )
-
+            message += f"⏰ Original deadline: {task['due_date']}\n"
         if task["recovery_deadline"]:
-
-            message += (
-                f"🔄 Recovery deadline: "
-                f"{task['recovery_deadline']}\n"
-            )
-
+            message += f"🔄 Recovery deadline: {task['recovery_deadline']}\n"
         if task["scheduled_start"]:
-
-            message += (
-                f"🕐 {task['scheduled_start']}"
-                f" → {task['scheduled_end']}\n"
-            )
-
+            message += f"🕐 {task['scheduled_start']} → {task['scheduled_end']}\n"
         message += "\n"
 
-    await update.message.reply_text(
-        message
-    )
+    await update.message.reply_text(message)
+    await _send_task_action_cards(update.message, tasks)
 
 
 # =========================================================
@@ -296,14 +285,9 @@ async def tasks_command(update, context):
 # =========================================================
 
 async def today_command(update, context):
-
-    user_id = str(
-        update.effective_user.id
-    )
-
-    await update.message.reply_text(
-        build_today_message(user_id)
-    )
+    user_id = str(update.effective_user.id)
+    await update.message.reply_text(build_today_message(user_id))
+    await _send_task_action_cards(update.message, get_today_tasks(user_id))
 
 
 # =========================================================
@@ -568,53 +552,26 @@ async def delete_command(update, context):
 # =========================================================
 
 async def overdue_command(update, context):
-
-    user_id = str(
-        update.effective_user.id
-    )
-
-    tasks = get_overdue_tasks(
-        user_id
-    )
+    user_id = str(update.effective_user.id)
+    tasks = get_overdue_tasks(user_id)
 
     if not tasks:
-
         await update.message.reply_text(
-            "🟢 OVERDUE TASK YO'Q\n\n"
-            "Barcha deadline'lar nazoratda."
+            "🟢 OVERDUE TASK YO'Q\n\nBarcha deadline'lar nazoratda."
         )
-
         return
 
-    message = (
-        "🔴 OVERDUE TASKLAR\n\n"
-    )
-
+    message = "🔴 OVERDUE TASKLAR\n\n"
     for task in tasks:
-
         message += (
-            f"#{task['id']} — "
-            f"{task['title']}\n"
-
-            f"⚡ Priority: "
-            f"{task['priority']}\n"
-
-            f"⏳ Deadline: "
-            f"{task['due_date']}\n"
-
-            f"📊 Status: "
-            f"{task['status']}\n\n"
+            f"#{task['id']} — {task['title']}\n"
+            f"⚡ Priority: {task['priority']}\n"
+            f"⏳ Deadline: {task['due_date']}\n"
+            f"📊 Status: {task['status']}\n\n"
         )
-
-    message += (
-        "━━━━━━━━━━━━━━\n"
-        "Qayta rejalashtirish:\n\n"
-        "/recover ID"
-    )
-
-    await update.message.reply_text(
-        message
-    )
+    message += "━━━━━━━━━━━━━━\nQayta rejalashtirish: /recover ID"
+    await update.message.reply_text(message)
+    await _send_task_action_cards(update.message, tasks)
 
 
 # =========================================================
@@ -735,16 +692,7 @@ async def recover_today_command(
 
         return
 
-    clear_task_schedule(
-        user_id,
-        task_id
-    )
-
-    update_task_status(
-        user_id,
-        task_id,
-        "PLANNED"
-    )
+    apply_reschedule_option(user_id, task_id, "today")
 
     await update.message.reply_text(
 
@@ -813,16 +761,7 @@ async def recover_tomorrow_command(
 
         return
 
-    clear_task_schedule(
-        user_id,
-        task_id
-    )
-
-    update_task_status(
-        user_id,
-        task_id,
-        "POSTPONED"
-    )
+    apply_reschedule_option(user_id, task_id, "tomorrow")
 
     await update.message.reply_text(
 
@@ -888,16 +827,7 @@ async def recover_short_command(
 
         return
 
-    clear_task_schedule(
-        user_id,
-        task_id
-    )
-
-    update_task_status(
-        user_id,
-        task_id,
-        "PARTIAL"
-    )
+    apply_reschedule_option(user_id, task_id, "short")
 
     await update.message.reply_text(
 
@@ -966,16 +896,7 @@ async def recover_cancel_command(
 
         return
 
-    update_task_status(
-        user_id,
-        task_id,
-        "CANCELLED"
-    )
-
-    clear_task_schedule(
-        user_id,
-        task_id
-    )
+    apply_reschedule_option(user_id, task_id, "cancel")
 
     await update.message.reply_text(
 
@@ -1367,6 +1288,77 @@ async def message_handler(
 
 
 # =========================================================
+# INLINE TASK CALLBACKS
+# =========================================================
+
+async def handle_task_callback(update, context):
+    query = update.callback_query
+    try:
+        action, task_id, option = parse_callback_data(query.data)
+    except ValueError:
+        await query.answer("❌ Noto'g'ri tugma.", show_alert=True)
+        return
+
+    user_id = str(query.from_user.id)
+    task = get_task(user_id, task_id)
+    if not task:
+        await query.answer("❌ Task topilmadi.", show_alert=True)
+        return
+
+    if task["status"] in {"COMPLETED", "CANCELLED", "SKIPPED"}:
+        await query.answer("ℹ️ Bu task allaqachon yakunlangan.", show_alert=True)
+        return
+
+    if action == "rmenu":
+        await query.answer()
+        await query.edit_message_reply_markup(
+            reply_markup=build_reschedule_keyboard(task_id)
+        )
+        return
+
+    if action == "resched" and option == "cancel":
+        await query.answer()
+        await query.edit_message_reply_markup(
+            reply_markup=build_task_keyboard(task_id)
+        )
+        return
+
+    if action == "resched":
+        try:
+            updated = apply_reschedule_option(user_id, task_id, option)
+        except (KeyError, ValueError):
+            await query.answer("❌ Task topilmadi yoki amal noto'g'ri.", show_alert=True)
+            return
+        await query.answer("✅ Reja yangilandi")
+        await query.edit_message_text(
+            f"🔄 {option.upper()}\n\n📋 {task['title']}\nStatus: {updated['status']}"
+        )
+        return
+
+    status_map = {
+        "done": ("COMPLETED", "✅ COMPLETED"),
+        "partial": ("PARTIAL", "🟡 PARTIAL"),
+        "skip": ("SKIPPED", "⏭️ SKIPPED"),
+        "cancel": ("CANCELLED", "❌ CANCELLED"),
+    }
+
+    if action == "delete":
+        delete_task(user_id, task_id)
+        await query.answer("🗑️ O'chirildi")
+        await query.edit_message_text(f"🗑️ O'CHIRILDI\n\n📋 {task['title']}")
+        return
+
+    if action in status_map:
+        status, label = status_map[action]
+        update_task_status(user_id, task_id, status)
+        await query.answer()
+        await query.edit_message_text(f"{label}\n\n📋 {task['title']}")
+        return
+
+    await query.answer("❌ Amal topilmadi.", show_alert=True)
+
+
+# =========================================================
 # POST INIT
 # =========================================================
 
@@ -1562,6 +1554,13 @@ def main():
         CommandHandler(
             "recover_cancel",
             recover_cancel_command
+        )
+    )
+
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_task_callback,
+            pattern=r"^t:"
         )
     )
 
